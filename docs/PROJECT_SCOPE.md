@@ -1,209 +1,352 @@
-# AtmoGraph — Focused Project Scope
+# AtmoGraph — Final Project Plan (Version 3)
 
-> **Project:** AtmoGraph — Semiconductor Supply Chain Risk & Ripple-Effect Analyzer  
-> **Focal case:** Silicon wafers used in semiconductor chip manufacturing  
-> **Scope baseline:** 13 November 2026  
+> **Official project:** AtmoGraph — Supply Chain Ripple Effect Predictor  
+> **Focused product family:** Electronic Integrated Circuits (ICs), HS heading 8542  
 > **Team:** 3 interns  
-> **Target build window:** 4 weeks  
-> **Status:** Focused implementation plan; validate the selected data fields with the mentor in Week 1.
+> **Project build target:** 4-week MVP within the 2-month internship  
+> **Scope date:** 13 November 2026  
+> **Status:** Recommended technical plan; confirm the revised prediction target with the assigned mentor.
 
-## 1. The decision: keep the project small
+## 1. Final decision and why the plan changed
 
-The first proposal was too broad: it combined semiconductor trade data, multiple international databases, news ingestion, NLP, a large graph database, a Graph Neural Network and a separate web frontend.
+The previous proposal focused only on silicon wafers. That is not the strongest data choice for the requested prediction task.
 
-That is unnecessary for a three-person team with a one-month project-completion window.
+In the ETO source files, the `Wafer` input is recorded against 2019 data. Its named company provider rows mostly have blank company-level market shares; only some country shares are numeric. ETO is also explicit that its dataset is a high-level snapshot, not a historical time series, and is not designed for tracking operational supply-chain changes or exact production locations.
 
-The revised project will use **one core semiconductor supply-chain dataset** and focus the dashboard on **silicon wafers**, an important input used in chip manufacturing. The goal is to identify supplier concentration and dependencies, then simulate how a disruption to a supplier or country could expose connected parts of the wafer supply network.
+Therefore:
+- **Do not make silicon wafers the main forecasting target.**
+- Keep silicon wafers as one important upstream input in the semiconductor context graph.
+- Make the main product family **electronic integrated circuits (HS 8542)**, for which monthly international trade observations can be collected.
+- Use ETO for named supplier/input/stage context, not as the source of historical delay labels.
+- Use a small, curated news feed for NLP-driven disruption detection.
 
-## 2. Problem statement
+This gives the project one clearly bounded product family, real historical observations, a graph, an NLP component and a defensible ML target.
 
-Semiconductor manufacturing depends on specialized upstream inputs and a relatively concentrated set of suppliers. A disruption affecting a critical supplier can expose downstream production stages to supply risk.
+## 2. Final project title and problem statement
 
-AtmoGraph will represent the selected semiconductor input network as a graph, measure supplier and country concentration, identify important dependency points, and simulate the potential ripple effect of a configurable supplier or country disruption.
+### AtmoGraph: Integrated Circuit Supply-Chain Ripple-Effect Predictor
 
-The system will report **structural exposure and scenario-based risk**. It will not claim to predict exact delivery-delay days, inventory shortages or future factory output because the selected dataset does not contain those ground-truth outcomes.
+Integrated-circuit supply chains involve suppliers, production inputs, manufacturing stages and cross-border trade. A disruption affecting a major trading economy or a critical upstream provider may expose other economies and connected parts of the supply network to supply risk.
 
-## 3. Core dataset — use this first
+AtmoGraph will construct a focused trade network for electronic integrated circuits, enrich it with semiconductor supplier and production-stage context, identify vulnerable dependencies, detect relevant disruption news, and estimate the risk of a future decline in reported IC trade flows. Users will be able to simulate a disruption and inspect which connected importers may be exposed.
 
-### Emerging Technology Observatory (ETO) Semiconductor Supply Chain Dataset
+**Prediction boundary:** The public data can support trade-flow stress analysis, not verified shipment-delay prediction. The application must not claim to predict exact delivery-delay days, inventory shortages, factory output losses or port transit times without corresponding ground-truth data.
 
-- Official documentation: https://www.eto.tech/dataset-docs/chipexplorer/
-- CSV repository: https://github.com/georgetown-cset/eto-supply-chain/tree/main/data
-- Interactive explorer: https://chipexplorer.eto.tech/
+## 3. Dataset plan
 
-Use the September 15, 2026 release. ETO describes this as a manually compiled, high-level dataset of semiconductor production inputs, providers, companies, countries and relationships. It consists of five related CSV tables:
+Use **one primary product-specific dataset** plus two small supporting sources with separate purposes. Do not download broad, unrelated Kaggle datasets.
 
-| File | Purpose |
-|---|---|
-| `inputs.csv` | Input name, type, description and production-stage information |
-| `providers.csv` | Provider/company/country identifiers and provider type |
-| `provision.csv` | Provider-to-input relationships and available market-share percentages |
-| `sequence.csv` | Relationships between inputs, including “goes into” and subtype links |
-| `stages.csv` | Semiconductor production-stage names and descriptions |
+### 3.1 Primary dataset — UN Comtrade monthly trade data
 
-**Why this source:** It is directly about semiconductor supply chains and contains the provider/input and production-stage relationships needed to construct a graph. It is more relevant than a generic e-commerce supply-chain dataset.
+Official portal: https://comtradeplus.un.org/  
+API documentation: https://comtradeplus.un.org/en/api-docs  
+Subscriptions and limits: https://comtradeplus.un.org/en/subscriptions  
+Product classification reference: https://unstats.un.org/unsd/classifications/Econ/Detail/EN/32/8542
 
-### Focal case: silicon wafers
+**Product boundary:** HS 8542 — Electronic integrated circuits. Retain the six-digit subheadings for processors/controllers (854231), memories (854232), amplifiers (854233) and other integrated circuits (854239). Exclude parts (854290) from the main finished-IC analysis. Use one consistent HS classification revision across the selected period and document it.
 
-The first dashboard case study will be the wafer input and the providers connected to it. ETO's explorer lists silicon-wafer suppliers including GlobalWafers, Siltronic, SK Siltron, SUMCO and Shin-Etsu, along with other providers.
+**Proposed time window:** January 2017–December 2025, monthly. Verify reporting availability before finalizing the country panel.
 
-During Week 1, confirm the exact input name/identifier in `inputs.csv`, then filter `provision.csv` and `sequence.csv` to the matching input and its directly connected records. Do not manually invent supplier links.
+**Fields to retain where available:**
+- Reporter/importing economy
+- Partner/exporting economy
+- Period (YYYYMM)
+- HS commodity code
+- Trade flow (imports)
+- Primary trade value in USD
+- Net weight and/or quantity, when reported
+- Data publication/observation status and source metadata
 
-### Important dataset limitations
+**Graph interpretation:** For an import record reported by country B with partner country A, create a directed edge **A → B** meaning “B reported imports of HS 8542 from A.” Weight the edge by reported trade value. Do not merge mirror exports and imports into the same edge table; use reported imports consistently to avoid double-counting.
 
-- ETO is a **snapshot**, not a historical time series.
-- Market-share data for most segments is from 2025, while some segments use older 2019 or 2022 data.
-- Provider-country attribution is based on the ultimate parent company's headquarters, not necessarily the physical factory or production location.
-- Some provider shares may be unavailable.
-- The dataset is high-level and is not designed to provide exact logistics lead times, inventories or factory capacities.
+**Country panel:** Begin with 10–15 major reporting economies selected from the actual data. Include partner economies with material trade links, then retain a manageable set of high-value partner links after EDA. Select countries based on data availability and observed trade volume—not assumptions. Target approximately 20–40 country nodes in the first graph.
 
-Review ETO's terms of use and include the requested dataset citation in the report. Do not assume the dataset has a Creative Commons licence unless its current terms say so.
+**Access:** UN Comtrade offers free registered individual access. The official plan lists up to 100,000 records per request and 500 API calls per day for the free tier. The no-key public preview is much more limited. Register for a free account/API key if required; premium access is not part of this project plan.
 
-## 4. What the application will do
+**Quality rules:**
+- Check monthly availability for each selected reporter before training.
+- Missing observations are not automatically zero trade.
+- Keep reporter, partner, period and commodity codes in a documented lookup table.
+- Record the classification revision and query parameters.
+- Save the untouched raw extract separately from cleaned data.
+- Use a reproducible download script and a download/version log.
 
-### Module A — Data preparation and EDA
+### 3.2 Supporting source — ETO Semiconductor Supply Chain Dataset
 
-- Load the five ETO CSV tables.
-- Inspect their dimensions, columns, nulls, duplicate identifiers and join keys.
-- Normalize identifiers and preserve original source values.
-- Filter to the wafer input and its source-supported connected inputs/providers.
-- Produce a short data dictionary and an EDA report.
+Official documentation: https://www.eto.tech/dataset-docs/chipexplorer/  
+CSV files: https://github.com/georgetown-cset/eto-chip-explorer/tree/main/data  
+Interactive explorer: https://chipexplorer.eto.tech/
 
-### Module B — Supply-chain graph
+The ETO dataset contains five related CSV tables: `inputs.csv`, `providers.csv`, `provision.csv`, `sequence.csv` and `stages.csv`.
 
-Use **NetworkX** initially; do not add Neo4j in the first version.
+**Planned use:** Provide named semiconductor companies, provider countries, inputs, input-to-input relationships, market-share snapshots and production stages for the dashboard's context layer.
 
-Node types:
-- Input
-- Company/provider
-- Country
-- Production stage
+Use only the most relevant nodes and relationships for the IC supply-chain story; do not import every ETO record into the first graph if it does not contribute to the chosen use case.
 
-Create only relationships supported by the source tables:
-- Provider supplies input
-- Input goes into another input
-- Input belongs to a production stage, where the source defines that relationship
-- Company is headquartered in country, preserving that meaning
+**Important limitations:**
+- It is a high-level snapshot, not a time series.
+- Some inputs use 2019 or 2022 data while many others use 2025 data.
+- Company/country attribution is generally based on the ultimate parent's headquarters, not the physical factory location.
+- Market shares can be missing or rounded and should not be treated as exact production capacity.
+- Do not use ETO alone to train a delay-forecasting model.
 
-Keep company-level and country-level market-share distributions separate. ETO country shares aggregate the market share of companies headquartered in that country; adding company and country shares together would double-count supply.
+### 3.3 Supporting source — GDELT news and events
 
-### Module C — Risk indicators
+GDELT data portal: https://www.gdeltproject.org/data.html  
+DOC 2.0 API documentation: https://blog.gdeltproject.org/gdelt-doc-2-0-api-debuts/
 
-Calculate interpretable measures from available shares:
-- Number of identified company providers
-- Number of provider countries
-- Largest provider share
-- Top-three provider share
-- Herfindahl–Hirschman Index (HHI), calculated separately at company and country level when valid shares exist
-- Supplier-share entropy, where enough comparable share values exist
+**Planned use:** Collect a small, filtered stream of articles about semiconductor-related disruption events, such as:
+- Factory shutdowns or fires
+- Earthquakes, floods or other natural hazards affecting production
+- Export controls or trade restrictions
+- Strikes, port closures or transport interruptions
+- Reported shortages or production interruptions
 
-Treat missing or incomplete shares as unknown, not zero. State the coverage and assumptions behind every risk indicator.
+Store a compact evidence table with publication date, headline, source URL, publisher/domain, extracted organization, extracted country, event category, relevance review and confidence. Use a small curated/reviewed set rather than downloading the entire GDELT archive.
 
-### Module D — Small ML component
+GDELT's article list provides metadata such as title, URL, date and source; article body availability varies by publisher. Use spaCy on available headlines/snippets or permitted article text. Do not claim that GDELT's automated event coding is ground truth.
 
-Use **unsupervised clustering** to group semiconductor inputs by their supplier-concentration profiles.
+## 4. Exact prediction target
 
-One modelling row represents one input category in the ETO dataset. Candidate features include provider count, country count, top-one share, top-three share, HHI and entropy. Use `StandardScaler` and `KMeans` as the first baseline. Try a small number of clusters and use silhouette score plus domain review to decide whether the clusters are meaningful.
+The official AtmoGraph brief describes downstream-delay prediction. The public datasets selected here do not include verified purchase-order delivery dates, factory lead times or observed delay labels. The defensible first-version target is therefore:
 
-The wafer input will be the main case study shown in the dashboard; other inputs from the same semiconductor dataset provide additional input-level observations for the clustering task.
+**Predict whether an importing economy is likely to experience IC trade-flow stress in the next 1, 2 or 3 months.**
 
-**Be precise about what this model does:** it groups inputs by structural concentration/dependency patterns. It does not forecast a future disruption, and the cluster names “lower/moderate/higher concentration” are assigned after inspecting the cluster profiles. If there are too few valid input observations or missing share values make clustering unstable, use the transparent concentration metrics alone rather than forcing a model.
+A trade-flow stress label can be defined as a material decline in reported HS 8542 imports relative to a seasonally comparable baseline. The drop threshold must be selected after EDA, documented before model training and checked with sensitivity analysis. For example, a 20% drop may be tested, but it must not be treated as a known industry standard.
 
-### Module E — Disruption scenario simulator
+This is a **proxy for supply stress**, not a confirmed shortage and not a delivery-delay label. The 30/60/90-day dashboard horizon refers to one-, two- and three-month trade-flow risk estimates.
 
-Let the user select an identified supplier or provider country and apply a hypothetical shock (for example, remove that provider's contribution or reduce its share by a chosen percentage).
+If the mentor requires exact delivery-delay prediction, the team must request suitable historical order/lead-time data from the mentor or company. Do not manufacture delivery-delay labels from trade values.
 
-Show:
-- The selected provider and its source-recorded share, if available.
-- Directly connected inputs.
-- Downstream nodes reachable through documented graph relationships.
-- A transparent exposure score based on source-supported shares and graph paths.
-- A clear label that this is a scenario, not an observed historical event or a guaranteed real-world outcome.
+## 5. System architecture
 
-Do not convert exposure into a delivery-delay estimate without actual lead-time labels.
+### 5.1 Data preparation
+- Download and version monthly HS 8542 import records.
+- Check data availability, duplicates, missing periods, country codes, product codes and outliers.
+- Build a clean reporter–partner–month panel.
+- Use SQL for filtering, grouping, joins and monthly feature extraction.
+- Use Pandas/NumPy for cleaning and feature engineering.
 
-### Module F — Dashboard
+### 5.2 Graph database and graph model
 
-Use **Streamlit + Plotly + NetworkX** for the first version. A single Python application is enough for this scope.
+Use **Neo4j Community** as the project graph database, as named in the official project brief. Keep the loaded network bounded to selected countries, relevant company/provider records and relevant production inputs/stages.
+
+Suggested node labels:
+- `Country`
+- `Company`
+- `Input`
+- `ProductionStage`
+- `DisruptionEvent`
+
+Suggested relationship types:
+- `IMPORTS_FROM`: importer country → exporter/partner country, with period, HS code, value and quantity properties; the direction must be clearly documented.
+- `SUPPLIES_INPUT`: company/provider → input, from ETO.
+- `INPUT_GOES_INTO`: input → downstream input, from ETO sequence relationships.
+- `BELONGS_TO_STAGE`: process/input → production stage, where supported by ETO.
+- `HEADQUARTERED_IN`: company → country, preserving the ETO headquarters meaning.
+- `AFFECTS`: reviewed news event → identified company or country.
+
+Do not treat a company's headquarters as proof that its factories are in that country. Do not invent direct company-to-country trade relationships from country-level customs records.
+
+Use NetworkX for local graph analysis and PyTorch Geometric for the GNN input representation. Neo4j is the persistent graph store and interactive query layer.
+
+### 5.3 Graph and concentration analysis
+
+Calculate:
+- Country import/export trade value trends
+- Number of active trading partners
+- Import-source concentration (HHI)
+- Weighted in-degree/out-degree
+- Betweenness or PageRank where the graph structure makes the measure meaningful
+- Major supplier/importer dependencies
+- Exposed downstream importers under a selected shock scenario
+
+Label every metric as observed, derived or simulated. Avoid adding company and country market shares together; they describe overlapping levels and would double-count.
+
+### 5.4 NLP disruption ingestion
+
+Use **spaCy**, not a fine-tuned Transformer, for the MVP:
+1. Query GDELT for a narrow set of semiconductor disruption terms.
+2. Retrieve headlines, available snippets, dates, publishers and article URLs.
+3. Run named-entity recognition for organizations and locations.
+4. Categorize disruption types using transparent keyword rules.
+5. Store a human-review flag and source evidence.
+6. Map an event to a graph company/country only when the entity match is sufficiently reliable.
+
+A human-reviewed news item can trigger a scenario or add a news-risk feature. A news mention is not proof that a trade-flow change or real-world shortage occurred.
+
+### 5.5 GNN and baseline model
+
+**Primary ML experiment:** a small snapshot-based Graph Convolutional Network (GCN) or GraphSAGE model for country-level trade-stress classification across monthly graph snapshots.
+
+Candidate node features:
+- Recent monthly imports and exports
+- 1-, 3-, 6- and 12-month lagged trade values
+- Rolling averages and percentage changes
+- Number of active trade partners
+- Import-source HHI
+- Weighted graph degree/centrality
+- Reviewed disruption-event count by country/month, if available
+
+**Target:** high/normal future IC import-flow stress for the next 1, 2 and 3 months. Define each horizon's label from future trade observations only. Features must use information available at the prediction date.
+
+**Baselines:** seasonal-naive benchmark plus Logistic Regression or Random Forest. The GNN must be compared against these baselines; do not assume the GNN is better.
+
+**Chronological split:** a starting proposal is 2017–2022 training, 2023 validation and 2024–2025 testing, adjusted only if actual coverage requires it. Never randomly mix future months into training.
+
+**Evaluation:** confusion matrix, precision, recall, F1-score, PR-AUC and ROC-AUC where appropriate. Report class balance, false positives, false negatives and limitations. If monthly coverage or label counts are inadequate, make graph-based exposure simulation the main result and clearly report that the GNN could not be validated reliably.
+
+### 5.6 Ripple-effect scenario simulator
+
+Allow a user to:
+- Select a country or a reviewed disruption event.
+- Apply a configurable reduction to that country's outgoing IC trade edges.
+- Recalculate direct importing-country exposure and, where justified, limited multi-hop exposure.
+- Show affected nodes, paths, trade weights and risk changes.
+- Compare a baseline and shocked scenario.
+
+Use an explicit attenuation rule for multi-hop propagation and document it. A simulated risk score is not a measured delay or a guaranteed outcome.
+
+### 5.7 API and dashboard
+
+Use the stack specified by the project brief, but keep the first release small:
+- **FastAPI:** serve risk outputs, graph data and scenario requests.
+- **React + React Flow:** interactive network view with zoom, pan, node selection and risk highlighting. Use D3 only if there is a specific visualization that React Flow cannot handle.
+- **Neo4j:** store and query the bounded supply graph.
+- **Docker:** package the API and frontend for a reproducible local demonstration.
+- **WebSocket:** implement a small update stream only if required for the demonstration; do not build a complex real-time distributed system.
 
 Dashboard pages:
-1. Dataset overview and coverage.
-2. Wafer supplier/company and country concentration.
-3. Dependency graph.
-4. Supplier/country disruption scenario.
-5. Model clusters and evaluation.
+1. Dataset coverage and EDA
+2. IC trade network
+3. Supplier and production-stage context
+4. NLP disruption feed with evidence links
+5. 30/60/90-day trade-stress estimates
+6. Disruption scenario comparison and affected-node paths
 
-## 5. Technology stack — keep it lean
+## 6. Hardware and training plan
 
-| Task | Technology |
+Target laptop: Intel Core i7 HX, 16 GB RAM and NVIDIA RTX 4050.
+
+The monthly trade panel and bounded country graph should be manageable on this machine. Use CPU for Pandas, SQL, spaCy and classical baselines. Use the RTX 4050 only for the small GNN experiment if it improves training speed.
+
+Recommended limits:
+- Around 20–40 country nodes in the initial graph, subject to data coverage.
+- Keep only meaningful trade edges; store raw trade data separately.
+- Use compact CSV/Parquet files and avoid loading every global partner/month into memory.
+- Use a small 2-layer GNN, modest hidden size and early stopping.
+- Do not fine-tune an LLM or Transformer in the first version.
+
+## 7. Technology stack
+
+| Layer | Technology |
 |---|---|
-| Data processing | Python, Pandas, NumPy |
-| EDA | Matplotlib, Seaborn |
-| Graph | NetworkX |
-| Risk clustering | Scikit-learn (StandardScaler, KMeans, silhouette score) |
-| Dashboard | Streamlit, Plotly |
-| Development | Jupyter Notebook, VS Code, Git/GitHub |
+| Data and EDA | Python, Pandas, NumPy, Matplotlib, Seaborn |
+| SQL | SQLite or MySQL for structured queries |
+| Graph storage | Neo4j Community |
+| Graph analysis | NetworkX |
+| NLP | spaCy |
+| Classical ML | Scikit-learn |
+| GNN | PyTorch + PyTorch Geometric |
+| API | FastAPI |
+| Frontend | React + React Flow |
+| Experiment tracking | MLflow (local, if time permits) |
+| Packaging | Docker |
+| Version control/testing | GitHub + GitHub Actions |
 
-Do **not** add PyTorch Geometric, a Graph Neural Network, Transformers, live news scraping, Neo4j, React, FastAPI, Docker or CI/CD to the first deliverable. These are stretch items only after the core project is working and validated.
+## 8. Team of three — work allocation
 
-## 6. Hardware plan
-
-Development target: laptop with Intel Core i7 HX processor, 16 GB RAM and NVIDIA RTX 4050 Laptop GPU.
-
-This dataset and the proposed scikit-learn/NetworkX workflow are small. They should run comfortably on the CPU; forcing GPU training would add setup complexity without improving the result. The RTX 4050 is available for a later, justified PyTorch experiment, but **GPU use is not an acceptance criterion**. Keep data in compact CSV/Parquet form, avoid loading unrelated datasets and close unused notebooks/apps if memory becomes tight.
-
-## 7. Work allocation for three members
-
-| Member | Ownership | Deliverables |
+| Member | Ownership | Main deliverables |
 |---|---|---|
-| Member 1 — Data | Download/version log, schema inspection, cleaning, wafer filtering, EDA and data dictionary | Reproducible cleaned tables and EDA |
-| Member 2 — Graph/risk | NetworkX graph, source-supported edges, concentration metrics and disruption simulation | Graph builder, risk calculations and scenario tests |
-| Member 3 — ML/app | Feature table, KMeans baseline/evaluation, Streamlit and Plotly dashboard | Model notebook, dashboard and demo |
+| Member 1 — Data/SQL | UN Comtrade extraction, data availability checks, HS filtering, cleaning, EDA, SQL features, dataset/version documentation | Clean monthly trade panel, EDA notebook, data dictionary |
+| Member 2 — Graph/ML | Neo4j model, graph construction, NetworkX analysis, GNN/baselines, evaluation, scenario propagation | Graph schema, model notebook, evaluation report, scenario engine |
+| Member 3 — NLP/Application | GDELT query and review workflow, spaCy extraction, FastAPI, React/React Flow dashboard, Docker integration | NLP event table, API, interactive dashboard |
 
-All three members should review the graph schema and risk assumptions. Integrate every few days; do not wait until Week 4.
+All three members must review the graph schema, model labels and risk assumptions. Integrate work continuously; do not leave integration until the last week.
 
-## 8. Four-week delivery plan
+## 9. One-month MVP roadmap
 
 | Week | Work | Exit criteria |
 |---|---|---|
-| 1 | Download ETO tables, inspect data, confirm wafer input ID, document schemas and clean records | Reproducible data-loading and EDA notebook |
-| 2 | Build NetworkX graph, validate joins and calculate supplier/country concentration | Working graph and verified wafer supplier view |
-| 3 | Build disruption simulator and test KMeans concentration clusters | Reproducible scenarios and honest model evaluation |
-| 4 | Build Streamlit dashboard, integrate, test and prepare report/PPT | End-to-end demonstration and documentation |
+| 1 — Data | Confirm HS 8542 scope, test monthly data availability, retrieve a pilot and then the selected reporter panel, build clean tables, run EDA and initial SQL queries | Reproducible dataset, data dictionary, coverage report and first trade-network sample |
+| 2 — Graph | Build bounded Neo4j graph, import country trade edges and ETO context, calculate concentration/centrality, create graph view | Working, source-traceable graph and dependency analysis |
+| 3 — NLP + ML | Implement reviewed GDELT/spaCy event pipeline, build baselines, train/evaluate small GNN, run first disruption scenarios | Working news extraction, baseline/GNN comparison and reproducible scenario |
+| 4 — Integration | FastAPI, React Flow dashboard, 30/60/90-day risk views, tests, Docker, report, PPT and demo | End-to-end local demonstration and complete submission package |
 
-## 9. Evaluation and acceptance criteria
+## 10. Second-month improvements and training alignment
 
-- Every node and edge has a traceable source record or a clearly labelled derived calculation.
-- Company-level and country-level shares are never double-counted.
-- Unknown shares are not silently treated as zero.
-- The team can identify the top suppliers and concentration indicators for the wafer input where data coverage permits.
-- A hypothetical supplier/country shock produces explainable affected nodes and paths.
-- Clustering is retained only if the clusters are stable and interpretable; report silhouette score and limitations.
-- The dashboard distinguishes observed source data, derived metrics and hypothetical scenario outputs.
-- No exact delay, inventory or production-loss claims are made without data to support them.
+The assignment letter gives the internship a two-month duration but a one-month project-completion duration. Complete the MVP in the first month. Use the remaining internship time for deeper validation and packaging, subject to mentor direction.
 
-## 10. Optional Kaggle dataset — only if the mentor insists on supervised ML
+Map the DSML session plan to the project:
+- NumPy/Pandas, cleaning, missing values and EDA: Week 1.
+- SQL, joins, CTEs and window functions: data preparation.
+- Statistics/probability: concentration analysis and shock thresholds.
+- Regression/classification and tree models: baselines where appropriate.
+- K-Means/PCA: optional exploratory grouping, not a substitute for the main prediction task.
+- Scikit-learn pipelines and data leakage: model preparation and validation.
+- NLP: spaCy event extraction.
+- Deep learning/GNN: bounded PyTorch Geometric experiment.
+- MLOps: MLflow experiment tracking and data/model version notes.
+- Serving/deployment: FastAPI and Docker.
+- CI/CD: GitHub Actions for unit tests and schema checks.
 
-**UCI SECOM (Kaggle mirror):** https://www.kaggle.com/datasets/paresh2047/uci-semcom  
-**Official UCI source:** https://archive.ics.uci.edu/dataset/179/secom
+Do not add Computer Vision, LLM fine-tuning, cloud infrastructure or a complex WebSocket platform unless the mentor specifically requires it and the core project is already stable.
 
-SECOM contains 1,567 semiconductor manufacturing observations, 591 sensor features and 104 failure labels. It is a compact, real semiconductor manufacturing dataset with missing values and a strongly imbalanced pass/fail target.
+## 11. Deliverables and acceptance checklist
 
-It can support a separate wafer/manufacturing defect-classification exercise, but it does **not** contain supplier relationships, country dependencies or disruption outcomes. Therefore, it is not part of AtmoGraph's core dataset and should not be mixed into the supply-chain graph as if it measured supplier disruptions.
+Required by the internship assignment letter:
+- Source code
+- Project documentation
+- Project report
+- Presentation (PPT)
+- Model evaluation results
+- Final project demonstration
 
-If the mentor requires a supervised ML model specifically, discuss whether the project scope should change to semiconductor manufacturing defect prediction before adopting SECOM.
+Additional working artifacts:
+- Raw-data download instructions and version log
+- Cleaned monthly trade panel
+- Data dictionary and EDA notebook
+- SQL queries and schema
+- Neo4j graph schema/import scripts
+- NLP disruption evidence table
+- Baseline and GNN training/evaluation notebooks
+- Model card with target definition and limitations
+- Scenario tests and dashboard
+- `requirements.txt` or environment file
+- Dockerfile/compose file and GitHub Actions tests
+- Weekly mentor progress notes
 
-## 11. Datasets and approaches intentionally excluded
+Acceptance criteria:
+1. Every trade edge can be traced to a reporter, partner, period, product and source record.
+2. Missing periods are not silently changed to zero.
+3. HS revision and all query filters are documented.
+4. Company HQ links are not represented as factory locations.
+5. Every news-driven event includes a source URL and a review status.
+6. The model uses time-safe chronological splits and is compared to baselines.
+7. GNN results are not overstated if the baseline performs better or test coverage is weak.
+8. The demo shows a real trade-network scenario and explains what is observed, derived and simulated.
+9. Exact delay forecasts are excluded unless genuine delay labels are obtained.
 
-- **BACI + UN Comtrade + GDELT together:** too many sources and joins for the first month; not required for the focused prototype.
-- **DataCo Smart Supply Chain:** generic e-commerce orders, not a semiconductor supplier network. It is not suitable as the core dataset for this project.
-- **Large GNN / Transformer / real-time ingestion:** no validated labels or need in the first version.
-- **Synthetic supplier-delay labels:** do not fabricate labels or present simulated outcomes as observed data.
+## 12. Explicit exclusions for the first release
 
-## 12. Mentor-facing summary
+- All electronics beyond the selected IC product family.
+- A global all-country graph with every commodity.
+- A full factory/port/logistics route map without reliable location and route data.
+- Exact delivery-delay, inventory or production-capacity forecasts without ground truth.
+- Fine-tuned Transformers/LLMs, computer vision and reinforcement learning.
+- Cloud-scale deployment or complex streaming infrastructure.
+- Fabricated supplier links, synthetic delivery-delay labels or unsupported claims.
 
-“Our team will use the Emerging Technology Observatory Semiconductor Supply Chain Dataset (September 2026 release) as the single core source. We will focus the case study on silicon wafers used in chip manufacturing. The system will map the documented suppliers, provider countries, inputs and production-stage relationships; calculate supplier concentration and dependency indicators; group input-level concentration profiles using a small unsupervised clustering model; and simulate the potential ripple effect of a selected supplier or country disruption. The first version will use Python, Pandas, NetworkX, Scikit-learn and Streamlit. We will not claim exact delay forecasts because the selected source does not provide historical lead-time labels.”
+## 13. Mentor approval item — must be resolved before final model training
+
+The official AtmoGraph brief describes a GNN predicting downstream delivery delays. The selected public sources do not provide measured order lead times or delivery-delay labels.
+
+Present this proposed adjustment to the mentor:
+
+> “We will focus on electronic integrated circuits (HS 8542), build a country-level monthly import network from UN Comtrade, enrich it with named semiconductor company/input relationships from ETO, and use NLP to identify relevant disruption news. Our GNN will estimate 30/60/90-day IC trade-flow stress and the dashboard will simulate downstream exposure. Since the public sources do not contain actual order-delay labels, we will not claim exact delivery-delay prediction. If delay prediction is mandatory, can the company provide historical shipment/lead-time data?”
+
+If the mentor rejects the proxy target, request the required delay dataset before changing the model. Do not build a delay model on invented labels.
 
 ---
 
-**Scope rule:** A small, reproducible, source-backed risk-analysis system is better than an ambitious graph/AI stack built on data that cannot support its predictions.
+**Final scope principle:** One product family, one primary historical trade dataset, a small named semiconductor context graph, a narrow news feed, one evaluated graph model and one working dashboard. Deliver a defensible system before adding complexity.
