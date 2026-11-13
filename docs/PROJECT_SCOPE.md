@@ -104,7 +104,7 @@ DOC 2.0 API documentation: https://blog.gdeltproject.org/gdelt-doc-2-0-api-debut
 
 Store a compact evidence table with publication date, headline, source URL, publisher/domain, extracted organization, extracted country, event category, relevance review and confidence. Use a small curated/reviewed set rather than downloading the entire GDELT archive.
 
-GDELT's article list provides metadata such as title, URL, date and source; article body availability varies by publisher. Use spaCy on available headlines/snippets or permitted article text. Do not claim that GDELT's automated event coding is ground truth.
+GDELT's DOC article-search API is best treated as a recent-news feed; do not assume it supplies a complete historical event corpus for the full 2017–2025 trade-training period. Article body availability varies by publisher. Use spaCy on available headlines/snippets or permitted article text. For the first version, use newly retrieved and human-reviewed news as an inference-time disruption signal and scenario trigger. Do **not** feed news counts into historical GNN training unless the team separately builds and validates a time-aligned historical news corpus with consistent coverage. Do not claim that GDELT's automated event coding is ground truth.
 
 ## 4. Exact prediction target
 
