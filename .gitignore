@@ -1,2 +1,10 @@
 # Source snapshots downloaded by scripts/validate_eto_data.py
 data/eto/
+.env
+venv/
+node_modules/
+__pycache__/
+data/raw/
+*.pt
+.ipynb_checkpoints/
+dist/
