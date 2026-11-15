@@ -1,11 +1,12 @@
-# AtmoGraph — Final Project Plan (Version 3)
+# AtmoGraph — Implementation Plan (Version 4)
 
 > **Official project:** AtmoGraph — Supply Chain Ripple Effect Predictor  
 > **Focused product family:** Electronic Integrated Circuits (ICs), HS heading 8542  
-> **Team:** 3 interns  
-> **Project build target:** 4-week MVP within the 2-month internship  
-> **Scope date:** 13 November 2026  
-> **Status:** Recommended technical plan; confirm the revised prediction target with the assigned mentor.
+> **Team assumption:** 3 interns; confirm that the group arrangement is formally approved  
+> **Build window:** 21-day MVP, planned for 15 November–5 December 2026  
+> **Date check:** The assignment dates 11/05/2026–12/05/2026 are interpreted here as 5 November–5 December; confirm this because the letter also describes a two-month duration.  
+> **Scope date:** 15 November 2026  
+> **Status:** Revised implementation proposal. Mentor approval of the target, data coverage and team arrangement is still pending.
 
 ## 1. Final decision and why the plan changed
 
@@ -57,9 +58,11 @@ Product classification reference: https://unstats.un.org/unsd/classifications/Ec
 - Net weight and/or quantity, when reported
 - Data publication/observation status and source metadata
 
-**Graph interpretation:** For an import record reported by country B with partner country A, create a directed edge **A → B** meaning “B reported imports of HS 8542 from A.” Weight the edge by reported trade value. Do not merge mirror exports and imports into the same edge table; use reported imports consistently to avoid double-counting.
+**Graph interpretation:** Keep each raw customs observation keyed by reporter/importer B, declared partner A, period and HS6. In the graph, represent it as importer B → declared partner A, with a relationship meaning “B reported imports from A.” Store reporter/partner codes, HS6, period, value, quantity, unit, classification revision and source query. This is a reported-partner relationship only: it does not prove the partner is the original manufacturer, country of origin or physical route. For downstream exposure, traverse the dependency in reverse (partner → reporting importer) and label the result reported-partner exposure. Use reported imports consistently; do not combine mirror exports into the same edge table.
 
 **Country panel:** Begin with 10–15 major reporting economies selected from the actual data. Include partner economies with material trade links, then retain a manageable set of high-value partner links after EDA. Select countries based on data availability and observed trade volume—not assumptions. Target approximately 20–40 country nodes in the first graph.
+
+**Trade-hub caution:** Do not automatically classify Hong Kong, Singapore or Malaysia as simple transit nodes. Some hubs also host manufacturing, assembly or testing activity, and the customs partner field does not identify the physical origin of a component. Report a sensitivity comparison with and without selected hubs; do not present either version as a verified factory-dependency map.
 
 **Access:** UN Comtrade offers free registered individual access. The official plan lists up to 100,000 records per request and 500 API calls per day for the free tier. The no-key public preview is much more limited. Register for a free account/API key if required; premium access is not part of this project plan.
 
@@ -108,15 +111,19 @@ GDELT's DOC article-search API is best treated as a recent-news feed; do not ass
 
 ## 4. Exact prediction target
 
-The official AtmoGraph brief describes downstream-delay prediction. The public datasets selected here do not include verified purchase-order delivery dates, factory lead times or observed delay labels. The defensible first-version target is therefore:
+The official brief asks for a GNN that estimates downstream ripple effects. The selected public sources do not contain verified purchase-order delivery dates, factory lead times or observed shipment-delay labels. The primary measurable target is therefore **continuous node-level deviation in reported IC import quantity from a seasonal baseline**. This is a trade-flow stress proxy, not exact delivery-delay prediction.
 
-**Predict whether an importing economy is likely to experience IC trade-flow stress in the next 1, 2 or 3 months.**
+For each importing-country node and HS6 series, predict the deviation at 1, 2 and 3 months ahead:
 
-A trade-flow stress label can be defined as a material decline in reported HS 8542 imports relative to a seasonally comparable baseline. The drop threshold must be selected after EDA, documented before model training and checked with sensitivity analysis. For example, a 20% drop may be tested, but it must not be treated as a known industry standard.
+- Observed quantity: the reported import quantity or net weight, only where its unit is consistent for that reporter/HS6 series.
+- Seasonal baseline: a predeclared statistic (for example, the median of available prior observations for the same calendar month), computed using only data available at the forecast origin.
+- Target: relative deviation = (future observed quantity − seasonal baseline) / seasonal baseline. Do not calculate it when the baseline is missing, zero or not comparable.
 
-This is a **proxy for supply stress**, not a confirmed shortage and not a delivery-delay label. The 30/60/90-day dashboard horizon refers to one-, two- and three-month trade-flow risk estimates.
+Keep HS6 subheadings separate when their quantity units are incompatible. Do not sum unlike units. If quantity coverage is too sparse, use trade value as a separately named fallback target, not as physical supply. Where quantity is available, inspect unit value (trade value / quantity) as a price-effect diagnostic and run a value-based sensitivity check. A decline in USD value alone may reflect chip-price movements rather than lower physical volume.
 
-If the mentor requires exact delivery-delay prediction, the team must request suitable historical order/lead-time data from the mentor or company. Do not manufacture delivery-delay labels from trade values.
+The dashboard may derive a high/normal stress label from the continuous deviation, but choose its threshold after EDA, document it before final evaluation and report sensitivity to alternative thresholds. Missing observations are not zero. All features must be available at the forecast origin; future observations are used only to construct targets.
+
+The 30/60/90-day horizon means one-, two- and three-month-ahead trade-flow deviation estimates. Do not describe these as confirmed shortages, factory-output losses, inventory depletion or delivery-delay days. If exact delay prediction is mandatory, obtain genuine historical order/shipment/lead-time labels from the mentor or company before training such a model.
 
 ## 5. System architecture
 
@@ -139,14 +146,14 @@ Suggested node labels:
 - `DisruptionEvent`
 
 Suggested relationship types:
-- `IMPORTS_FROM`: importer country → exporter/partner country, with period, HS code, value and quantity properties; the direction must be clearly documented.
-- `SUPPLIES_INPUT`: company/provider → input, from ETO.
-- `INPUT_GOES_INTO`: input → downstream input, from ETO sequence relationships.
-- `BELONGS_TO_STAGE`: process/input → production stage, where supported by ETO.
-- `HEADQUARTERED_IN`: company → country, preserving the ETO headquarters meaning.
-- `AFFECTS`: reviewed news event → identified company or country.
+- **REPORTED_IMPORTS_FROM:** importer/reporting country → declared customs partner; time-stamped and source-backed, not proof of physical origin or manufacturer.
+- **SUPPLIES_INPUT:** company/provider → input, from ETO.
+- **INPUT_GOES_INTO:** input → downstream input, from ETO sequence relationships.
+- **BELONGS_TO_STAGE:** input/process → production stage, where supported by ETO.
+- **HEADQUARTERED_IN:** company → country, preserving the ETO headquarters meaning only.
+- **AFFECTS:** disruption event → candidate company/country entity, with source URL, event date, extraction method, confidence and review status.
 
-Do not treat a company's headquarters as proof that its factories are in that country. Do not invent direct company-to-country trade relationships from country-level customs records.
+Do not treat a company's headquarters as proof that its factories are in that country. Do not invent direct company-to-country trade relationships from country-level customs records. Keep the customs trade layer and ETO production-context layer distinct; join them only through explicit, provenance-labelled relationships. For multi-hop exposure, make the reverse traversal from a reported partner to the importers that name it explicit; describe the result as reported-partner exposure, not a verified physical supply chain.
 
 Use NetworkX for local graph analysis and PyTorch Geometric for the GNN input representation. Neo4j is the persistent graph store and interactive query layer.
 
@@ -165,64 +172,65 @@ Label every metric as observed, derived or simulated. Avoid adding company and c
 
 ### 5.4 NLP disruption ingestion
 
-Use **spaCy**, not a fine-tuned Transformer, for the MVP:
-1. Query GDELT for a narrow set of semiconductor disruption terms.
-2. Retrieve headlines, available snippets, dates, publishers and article URLs.
-3. Run named-entity recognition for organizations and locations.
-4. Categorize disruption types using transparent keyword rules.
-5. Store a human-review flag and source evidence.
-6. Map an event to a graph company/country only when the entity match is sufficiently reliable.
+NLP must create graph updates, not remain a manually reviewed news list:
 
-A human-reviewed news item can trigger a scenario or add a news-risk feature. A news mention is not proof that a trade-flow change or real-world shortage occurred.
+1. Query GDELT for a narrow set of semiconductor disruption terms and retain headline, available snippet, publication time, publisher/domain and source URL.
+2. Build a gazetteer from ETO provider names and aliases plus a maintained country/location list. Use spaCy EntityRuler and normalization before accepting a match.
+3. Use a pretrained Hugging Face NER model as an inference-only comparator or fallback if useful; do not fine-tune a Transformer for the MVP.
+4. Categorize event types with transparent rules (fire, shutdown, natural hazard, export control, strike, port/transport interruption, shortage report).
+5. Create or update a DisruptionEvent node and candidate AFFECTS relationships in Neo4j. Store source URL, article date, extracted text span, entity-resolution method, confidence and review state. Low-confidence or ambiguous matches remain pending review; only accepted links should affect model features or risk scores.
+6. Hand-label a target of approximately 100 headlines (or report the actual available sample) and measure organization/location entity precision, recall and F1. Record ambiguous and unmatched cases rather than hiding them.
+
+GDELT DOC is a recent-news feed, not a complete historical event corpus for the 2017–2025 trade panel. Use it for inference-time graph updates and demonstrations; do not backfill historical GNN features from incomplete recent coverage. A news mention is evidence of a report, not proof that a disruption caused a trade decline or shortage.
 
 ### 5.5 GNN and baseline model
 
-**Primary ML experiment:** a small snapshot-based Graph Convolutional Network (GCN) or GraphSAGE model for country-level trade-stress classification across monthly graph snapshots.
+**Required graph model:** implement a small GraphSAGE model in PyTorch Geometric for **node regression** on monthly graph snapshots. The model predicts the continuous seasonal-baseline deviation defined in Section 4 for 1-, 2- and 3-month horizons. The GNN is a required project component, not an optional experiment; its performance must still be reported honestly.
 
-Candidate node features:
-- Recent monthly imports and exports
-- 1-, 3-, 6- and 12-month lagged trade values
-- Rolling averages and percentage changes
-- Number of active trade partners
-- Import-source HHI
-- Weighted graph degree/centrality
-- Reviewed disruption-event count by country/month, if available
+Candidate node features, calculated only from information available at the forecast origin:
+- Lagged monthly import quantity by HS6 where units are comparable; trade value and unit value as separate fields.
+- 1-, 3-, 6- and 12-month lags and rolling summaries.
+- Active reported trade-partner count and import-source concentration (HHI).
+- Weighted graph degree/centrality, clearly marked as derived from the same trade panel.
+- Accepted NLP disruption-event indicators with event date and provenance, only for periods where coverage is genuinely available.
+- ETO supplier/input/stage context only where a defensible entity relationship exists; headquarters must not be treated as factory location.
 
-**Target:** high/normal future IC import-flow stress for the next 1, 2 and 3 months. Define each horizon's label from future trade observations only. Features must use information available at the prediction date.
+**Baselines:** seasonal-naive forecast, Ridge/linear regression, Random Forest and XGBoost. Compare all models on the same chronological folds and target definition. Run an ablation comparing trade-only features with trade-plus-graph features: degree and HHI come from the same trade data, so they may add little predictive information. Do not assume GraphSAGE beats XGBoost or that graph features improve accuracy.
 
-**Baselines:** seasonal-naive benchmark plus Logistic Regression or Random Forest. The GNN must be compared against these baselines; do not assume the GNN is better.
+**Validation:** use expanding-window walk-forward validation, not one fixed split. A starting design is train through 2020 → validate 2021; expand through 2021 → validate 2022; expand through 2022 → validate 2023; then reserve 2024–2025 as a final holdout if coverage permits. Adjust dates only to documented data availability. Never shuffle months across time or allow future information into features or seasonal baselines.
 
-**Chronological split:** a starting proposal is 2017–2022 training, 2023 validation and 2024–2025 testing, adjusted only if actual coverage requires it. Never randomly mix future months into training.
+**Evaluation:** report MAE and RMSE for continuous node regression, plus direction accuracy. Derive stress labels from the continuous target only for secondary classification metrics such as precision, recall, F1 and PR-AUC. Report coverage, missingness, sample counts and performance by horizon/HS6. If coverage is insufficient, report that limitation; do not silently replace the required GNN with a classifier or claim an unvalidated result.
 
-**Evaluation:** confusion matrix, precision, recall, F1-score, PR-AUC and ROC-AUC where appropriate. Report class balance, false positives, false negatives and limitations. If monthly coverage or label counts are inadequate, make graph-based exposure simulation the main result and clearly report that the GNN could not be validated reliably.
+**Experiment tracking:** MLflow is required for model runs. Log dataset/version identifiers, feature set, fold dates, parameters, metrics and model artifacts.
 
 ### 5.6 Ripple-effect scenario simulator
 
 Allow a user to:
-- Select a country or a reviewed disruption event.
-- Apply a configurable reduction to that country's outgoing IC trade edges.
-- Recalculate direct importing-country exposure and, where justified, limited multi-hop exposure.
-- Show affected nodes, paths, trade weights and risk changes.
-- Compare a baseline and shocked scenario.
+- Select a country or an NLP-created, source-backed disruption event.
+- Apply a configurable reduction to the selected entity's relevant reported-trade exposure edges.
+- Recalculate direct and limited multi-hop importer exposure, showing paths, edge provenance and the assumed attenuation at each hop.
+- Compare baseline and shocked scenarios and inspect sensitivity to shock size and hop attenuation.
 
-Use an explicit attenuation rule for multi-hop propagation and document it. A simulated risk score is not a measured delay or a guaranteed outcome.
+**Explicit limitation:** the first simulator does not model supplier substitution, spare capacity, inventory buffers or alternative sourcing. Its output is gross exposure under a stated no-substitution assumption, not a forecast of actual lost supply or delay. Make the assumption visible in the UI.
+
+Backtest candidate historical events where the reporter/partner panel and event mapping permit: the Renesas fire (company-level event, March 2021), Malaysia COVID restrictions (2021), Shanghai lockdowns (city-level event, 2022) and Taiwan earthquake (April 2024). Compare simulated exposure rankings with seasonally adjusted observed trade deviations in predeclared post-event windows; use matched control countries or placebo windows where feasible. Report data coverage and mapping limitations. This is an association/predictive validation exercise, not causal proof. Do not map a company event to a country solely through its ETO headquarters.
 
 ### 5.7 API and dashboard
 
-Use the stack specified by the project brief, but keep the first release small:
+Keep the first release small but satisfy the brief's live-update requirement:
 - **FastAPI:** serve risk outputs, graph data and scenario requests.
-- **React + React Flow:** interactive network view with zoom, pan, node selection and risk highlighting. Use D3 only if there is a specific visualization that React Flow cannot handle.
-- **Neo4j:** store and query the bounded supply graph.
+- **Neo4j:** persist and query the bounded graph, including NLP-created disruption nodes and candidate/accepted AFFECTS links.
+- **FastAPI WebSocket:** publish a small event when an accepted NLP disruption updates the graph or a scenario/risk result changes. Use lightweight polling only as a fallback if WebSocket deployment is blocked.
+- **React + React Flow:** interactive network view with zoom, pan, node selection, provenance details and risk highlighting.
 - **Docker:** package the API and frontend for a reproducible local demonstration.
-- **WebSocket:** implement a small update stream only if required for the demonstration; do not build a complex real-time distributed system.
 
-Dashboard pages:
-1. Dataset coverage and EDA
-2. IC trade network
-3. Supplier and production-stage context
-4. NLP disruption feed with evidence links
-5. 30/60/90-day trade-stress estimates
-6. Disruption scenario comparison and affected-node paths
+Dashboard views:
+1. Dataset coverage, quantity/value quality and EDA
+2. Reported IC trade-partner network
+3. ETO supplier and production-stage context, with headquarters caveat
+4. NLP disruption feed, extracted entities, confidence and source evidence
+5. 30/60/90-day node-regression estimates and derived stress labels
+6. Disruption scenario comparison, multi-hop exposure paths and simulator assumptions
 
 ## 6. Hardware and training plan
 
@@ -237,6 +245,8 @@ Recommended limits:
 - Use a small 2-layer GNN, modest hidden size and early stopping.
 - Do not fine-tune an LLM or Transformer in the first version.
 
+The GraphSAGE node-regression path must be implemented even if the first data pilot is small. If the real panel is not ready, use a clearly labelled illustrative seed graph only to exercise graph ingestion, API and UI wiring; never use mock records for model training, backtesting or performance claims.
+
 ## 7. Technology stack
 
 | Layer | Technology |
@@ -245,12 +255,13 @@ Recommended limits:
 | SQL | SQLite or MySQL for structured queries |
 | Graph storage | Neo4j Community |
 | Graph analysis | NetworkX |
-| NLP | spaCy |
-| Classical ML | Scikit-learn |
+| NLP | spaCy EntityRuler + pretrained Hugging Face NER (inference only) |
+| Classical ML | Scikit-learn + XGBoost |
 | GNN | PyTorch + PyTorch Geometric |
 | API | FastAPI |
 | Frontend | React + React Flow |
-| Experiment tracking | MLflow (local, if time permits) |
+| Experiment tracking | MLflow (required, local) |
+| Live updates | FastAPI WebSocket (polling fallback) |
 | Packaging | Docker |
 | Version control/testing | GitHub + GitHub Actions |
 
@@ -258,39 +269,40 @@ Recommended limits:
 
 | Member | Ownership | Main deliverables |
 |---|---|---|
-| Member 1 — Data/SQL | UN Comtrade extraction, data availability checks, HS filtering, cleaning, EDA, SQL features, dataset/version documentation | Clean monthly trade panel, EDA notebook, data dictionary |
-| Member 2 — Graph/ML | Neo4j model, graph construction, NetworkX analysis, GNN/baselines, evaluation, scenario propagation | Graph schema, model notebook, evaluation report, scenario engine |
-| Member 3 — NLP/Application | GDELT query and review workflow, spaCy extraction, FastAPI, React/React Flow dashboard, Docker integration | NLP event table, API, interactive dashboard |
+| Member 1 — Data/SQL | UN Comtrade pilot and extraction, HS6/classification checks, quantity-unit coverage, cleaning, EDA, seasonal baseline and SQL features | Reproducible raw/clean panel, coverage report, data dictionary and EDA |
+| Member 2 — Graph/ML | Neo4j schema and import, monthly graph snapshots, GraphSAGE node regression, Ridge/Random Forest/XGBoost baselines, walk-forward evaluation, scenario engine and event backtests | Source-traceable graph, model comparison, MLflow runs, simulator and backtest report |
+| Member 3 — NLP/Application | GDELT feed, ETO/country gazetteer, headline annotation/evaluation, NLP-triggered graph updates, FastAPI/WebSocket, React Flow dashboard and Docker | Evidence-linked event table, NER evaluation, API, live dashboard and reproducible demo |
 
-All three members must review the graph schema, model labels and risk assumptions. Integrate work continuously; do not leave integration until the last week.
+All three members must review the graph semantics, prediction target, leakage rules and risk assumptions. Build and integrate a thin vertical slice together in Days 1–5; do not wait for the full Comtrade panel before starting the UI or API.
 
-## 9. One-month MVP roadmap
+## 9. 21-day MVP roadmap
 
-| Week | Work | Exit criteria |
+| Window | Work | Exit criteria |
 |---|---|---|
-| 1 — Data | Confirm HS 8542 scope, test monthly data availability, retrieve a pilot and then the selected reporter panel, build clean tables, run EDA and initial SQL queries | Reproducible dataset, data dictionary, coverage report and first trade-network sample |
-| 2 — Graph | Build bounded Neo4j graph, import country trade edges and ETO context, calculate concentration/centrality, create graph view | Working, source-traceable graph and dependency analysis |
-| 3 — NLP + ML | Implement reviewed GDELT/spaCy event pipeline, build baselines, train/evaluate small GNN, run first disruption scenarios | Working news extraction, baseline/GNN comparison and reproducible scenario |
-| 4 — Integration | FastAPI, React Flow dashboard, 30/60/90-day risk views, tests, Docker, report, PPT and demo | End-to-end local demonstration and complete submission package |
+| Days 1–5 — approval and vertical slice | Obtain mentor sign-off on the proxy target and brief alignment; pilot Comtrade coverage for 15–20 candidate economies; create a small illustrative seed graph; connect Neo4j, FastAPI and React Flow with a stub prediction; start the GDELT/NLP event path. | The app can display a graph and stub risk update end to end using clearly labelled mock data; the Comtrade pilot produces a real coverage report. Mock data is never used for model evaluation. |
+| Days 6–12 — real data and baselines | Build the cleaned monthly panel and data dictionary; inspect quantity units, value and unit-value effects; define the seasonal baseline; run seasonal-naive, Ridge and XGBoost baselines with expanding-window validation; build the ETO/country gazetteer and annotate about 100 headlines. | Reproducible real-data panel, coverage/EDA report, baseline metrics and measured NER precision/recall. |
+| Days 13–18 — graph intelligence | Build monthly trade graph snapshots and ETO context layer; implement GraphSAGE node regression; compare with baselines and run graph-feature ablation; implement the no-substitution scenario simulator and feasible historical-event backtests; wire NLP graph updates to the dashboard and WebSocket. | Evaluated GNN, documented simulator assumptions/backtest, source-backed NLP graph updates and live dashboard refresh. |
+| Days 19–21 — hardening and delivery | Run tests, fix integration issues, package with Docker, verify setup instructions, freeze metrics, prepare report/PPT and rehearse the demonstration. | Reproducible end-to-end MVP and submission package; no new features added during the final window. |
 
-## 10. Second-month improvements and training alignment
+The seed graph is an interface/integration fallback only. Label every illustrative node/edge as mock data and keep it separate from observed data, training and evaluation. If Comtrade coverage or quantity units fail the pilot, narrow the reporter/HS6 panel or use a separately named value-stress target; do not fabricate missing observations.
 
-The assignment letter gives the internship a two-month duration but a one-month project-completion duration. Complete the MVP in the first month. Use the remaining internship time for deeper validation and packaging, subject to mentor direction.
+## 10. DSML alignment and required MLOps
+
+The assignment letter's dates appear to span 5 November–5 December 2026 if read as day/month, while its text also says two months. Confirm the actual end date and whether the three-person team is formally approved. Plan against the earlier 5 December date until clarified; do not assume an extra month.
 
 Map the DSML session plan to the project:
-- NumPy/Pandas, cleaning, missing values and EDA: Week 1.
-- SQL, joins, CTEs and window functions: data preparation.
-- Statistics/probability: concentration analysis and shock thresholds.
-- Regression/classification and tree models: baselines where appropriate.
-- K-Means/PCA: optional exploratory grouping, not a substitute for the main prediction task.
-- Scikit-learn pipelines and data leakage: model preparation and validation.
-- NLP: spaCy event extraction.
-- Deep learning/GNN: bounded PyTorch Geometric experiment.
-- MLOps: MLflow experiment tracking and data/model version notes.
-- Serving/deployment: FastAPI and Docker.
-- CI/CD: GitHub Actions for unit tests and schema checks.
+- NumPy/Pandas, cleaning, missing values and EDA: Comtrade panel and coverage.
+- SQL, joins, CTEs and window functions: monthly feature extraction.
+- Statistics/probability: seasonal baselines, concentration and shock sensitivity.
+- Regression and tree models: Ridge, Random Forest and XGBoost baselines.
+- Scikit-learn pipelines and data leakage: expanding-window validation.
+- NLP: spaCy gazetteer/EntityRuler and pretrained Hugging Face NER inference.
+- Deep learning/GNN: required GraphSAGE node-regression experiment.
+- MLOps: **MLflow is required**, not optional; track data versions, parameters, folds, metrics and model artifacts.
+- Serving/deployment: FastAPI, WebSocket updates and Docker.
+- CI/CD: GitHub Actions for tests and schema checks.
 
-Do not add Computer Vision, LLM fine-tuning, cloud infrastructure or a complex WebSocket platform unless the mentor specifically requires it and the core project is already stable.
+Do not add Computer Vision, LLM fine-tuning, cloud infrastructure or complex distributed streaming unless the mentor explicitly requires them and the core deliverables are already stable.
 
 ## 11. Deliverables and acceptance checklist
 
@@ -317,15 +329,18 @@ Additional working artifacts:
 - Weekly mentor progress notes
 
 Acceptance criteria:
-1. Every trade edge can be traced to a reporter, partner, period, product and source record.
-2. Missing periods are not silently changed to zero.
-3. HS revision and all query filters are documented.
-4. Company HQ links are not represented as factory locations.
-5. Every news-driven event includes a source URL and a review status.
-6. The model uses time-safe chronological splits and is compared to baselines.
-7. GNN results are not overstated if the baseline performs better or test coverage is weak.
-8. The demo shows a real trade-network scenario and explains what is observed, derived and simulated.
-9. Exact delay forecasts are excluded unless genuine delay labels are obtained.
+1. Every trade observation can be traced to reporter, declared partner, period, HS6, classification and source query.
+2. Reported partner links are not described as verified origin, manufacturer, factory or physical route.
+3. Missing periods and incompatible quantity units are not silently changed to zero or aggregated.
+4. The seasonal baseline and all model features use only information available at the forecast origin.
+5. The primary GNN is GraphSAGE node regression for continuous 30/60/90-day seasonal-baseline deviation and is compared with seasonal-naive, Ridge and XGBoost baselines.
+6. Expanding-window validation and a final chronological holdout are used where coverage permits; graph-feature ablation is reported.
+7. MLflow records the dataset/version, folds, parameters, metrics and artifacts.
+8. NLP creates source-linked disruption graph updates with confidence and review status; NER quality is measured on a labelled sample.
+9. The dashboard receives graph/risk updates through WebSocket or a documented polling fallback.
+10. Scenario outputs state the no-substitution assumption and are compared with observed event-window trade deviations where coverage permits; no causal claim is made.
+11. The demo distinguishes observed, derived, predicted and simulated information.
+12. Exact delay forecasts are excluded unless genuine delay labels are obtained.
 
 ## 12. Explicit exclusions for the first release
 
@@ -337,15 +352,22 @@ Acceptance criteria:
 - Cloud-scale deployment or complex streaming infrastructure.
 - Fabricated supplier links, synthetic delivery-delay labels or unsupported claims.
 
-## 13. Mentor approval item — must be resolved before final model training
+## 13. Mentor approval item — resolve this week, before final model training
 
-The official AtmoGraph brief describes a GNN predicting downstream delivery delays. The selected public sources do not provide measured order lead times or delivery-delay labels.
+The official brief expects NLP-triggered graph updates, a GNN for multi-hop ripple effects and a live dashboard. The current public sources do not provide verified order/shipment delay labels, so the proposed primary target is continuous node-level deviation in reported IC import quantity from a seasonal baseline. The stress label is derived from that regression target.
 
-Present this proposed adjustment to the mentor:
+Ask the mentor to confirm:
+1. Whether this trade-flow deviation target is accepted as the measurable proxy, or whether the company can provide genuine historical delivery-delay labels.
+2. That a GraphSAGE node-regression model, NLP-created Neo4j disruption updates and a live FastAPI/WebSocket dashboard satisfy the required implementation.
+3. That the small seed graph may be used for the Week 1 vertical slice while real Comtrade data is being collected.
+4. That the three-person team arrangement is approved, since the assignment letter is addressed to one intern.
+5. The correct internship end date, because the written duration and numeric dates appear inconsistent.
 
-> “We will focus on electronic integrated circuits (HS 8542), build a country-level monthly import network from UN Comtrade, enrich it with named semiconductor company/input relationships from ETO, and use NLP to identify relevant disruption news. Our GNN will estimate 30/60/90-day IC trade-flow stress and the dashboard will simulate downstream exposure. Since the public sources do not contain actual order-delay labels, we will not claim exact delivery-delay prediction. If delay prediction is mandatory, can the company provide historical shipment/lead-time data?”
+Suggested mentor message:
 
-If the mentor rejects the proxy target, request the required delay dataset before changing the model. Do not build a delay model on invented labels.
+> “We will focus on electronic integrated circuits (HS 8542), build a monthly reported-import-partner graph from UN Comtrade, and enrich it with ETO supplier/input/stage context. NLP will extract disruption entities from recent GDELT news and create source-backed event updates in Neo4j. Our required GraphSAGE model will perform node regression on 30/60/90-day deviation from a seasonal trade-quantity baseline; stress labels will be derived from that continuous output. The dashboard will show multi-hop exposure scenarios and live graph updates. Public data does not contain verified order-delay labels, so we will not claim exact delivery-delay prediction. Is this target acceptable, or can the company provide historical shipment/lead-time labels?”
+
+Do not start final model training until the target and data-coverage approach are approved. If the mentor requires exact delay prediction, request the corresponding labelled dataset rather than manufacturing delay targets.
 
 ---
 
