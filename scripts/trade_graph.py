@@ -1,20 +1,3 @@
-"""Build a directed monthly trade graph from cleaned UN Comtrade IC records.
-
-Expected CSV columns:
-    reporter, partner, period, hs_code, import_value_usd
-
-Optional column:
-    quantity_tonnes
-
-Direction convention:
-    reporter = importing country
-    partner = exporting country
-    therefore partner -> reporter
-
-This module deliberately consumes standardized records. It does not download or
-clean raw Comtrade data, infer missing months, or treat unreported trade as zero.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -63,12 +46,6 @@ def _number(
 def build_trade_graph(
     records: Iterable[Mapping[str, object]],
 ) -> nx.MultiDiGraph:
-    """Create an IC trade graph, preserving month and HS product on each edge.
-
-    Duplicate records for the same exporter, importer, month, and HS code are
-    aggregated. Out-of-scope HS codes and self-reported country loops are skipped.
-    Invalid in-scope records fail loudly rather than being silently discarded.
-    """
     graph = nx.MultiDiGraph(
         name="AtmoGraph monthly integrated-circuit reported imports",
         source=SOURCE_NAME,
@@ -105,7 +82,6 @@ def build_trade_graph(
                 f"Row {row_number}: invalid month in period {period!r}"
             )
 
-        # The reporter is the importer; the partner is the exporter.
         exporter, importer = partner, reporter
         if exporter == importer:
             continue
@@ -148,7 +124,6 @@ def build_trade_graph(
 
 
 def read_trade_csv(path: Path) -> list[dict[str, str]]:
-    """Read a standardized Comtrade CSV without changing its source values."""
     with path.open("r", newline="", encoding="utf-8-sig") as file:
         reader = csv.DictReader(file)
         required = {"reporter", "partner", "period", "hs_code", "import_value_usd"}
