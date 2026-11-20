@@ -122,5 +122,44 @@ class ValidateEtoDataTests(unittest.TestCase):
         self.assertTrue(any("sequence.csv: file not found" in error for error in report["errors"]))
 
 
+    def test_empty_provider_table_does_not_skip_provision_reference_check(self) -> None:
+        write_table(self.data_dir, "providers.csv", [])
+        report = validator.validate_dataset(self.data_dir)
+        self.assertTrue(any(
+            "provider_id references unknown ID 'P2'" in error
+            for error in report["errors"]
+        ))
+
+    def test_empty_input_and_stage_tables_do_not_skip_provision_target_check(self) -> None:
+        write_table(self.data_dir, "inputs.csv", [])
+        write_table(self.data_dir, "stages.csv", [])
+        report = validator.validate_dataset(self.data_dir)
+        self.assertTrue(any(
+            "provided_id references unknown ID 'N1'" in error
+            for error in report["errors"]
+        ))
+        self.assertTrue(any(
+            "provided_id references unknown ID 'S2'" in error
+            for error in report["errors"]
+        ))
+
+    def test_empty_stage_table_does_not_skip_input_stage_reference_check(self) -> None:
+        write_table(self.data_dir, "stages.csv", [])
+        report = validator.validate_dataset(self.data_dir)
+        self.assertTrue(any(
+            "stage_id references unknown ID 'S2'" in error
+            for error in report["errors"]
+        ))
+
+    def test_empty_input_table_does_not_skip_sequence_reference_check(self) -> None:
+        write_table(self.data_dir, "inputs.csv", [])
+        report = validator.validate_dataset(self.data_dir)
+        self.assertTrue(any(
+            "input_id references unknown ID 'N1'" in error
+            for error in report["errors"]
+        ))
+
+
+
 if __name__ == "__main__":
     unittest.main()

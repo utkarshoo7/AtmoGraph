@@ -230,14 +230,17 @@ def validate_dataset(data_dir: Path) -> dict[str, Any]:
             if country and country not in country_names:
                 _error(report, f"providers.csv:{line}: unknown country provider {country!r}")
 
-    if _has(inputs, "stage_id") and stage_ids:
+    if _has(inputs, "stage_id") and _has(stages, "stage_id", "stage_name"):
         _reference(inputs["rows"], "inputs.csv", "stage_id", stage_ids, report, optional=True)
 
     if _has(provision, "provider_id", "provided_id", "share_provided", "year"):
         rows = provision["rows"]
-        if provider_ids:
+        if _has(providers, "provider_id", "provider_name", "provider_type", "country"):
             _reference(rows, "provision.csv", "provider_id", provider_ids, report)
-        if input_ids or stage_ids:
+        if (
+            _has(inputs, "input_id", "input_name", "type", "stage_id", "year")
+            and _has(stages, "stage_id", "stage_name")
+        ):
             # ETO provision records can point to either an input (N...) or a stage (S...).
             _reference(rows, "provision.csv", "provided_id", input_ids | stage_ids, report)
         keys = [
@@ -259,7 +262,10 @@ def validate_dataset(data_dir: Path) -> dict[str, Any]:
                         _error(report, f"provision.csv:{line}: share_provided outside [0, 100]")
         _years(rows, "provision.csv", report)
 
-    if _has(sequence, "input_id", "goes_into_id", "is_type_of_id") and input_ids:
+    if (
+        _has(sequence, "input_id", "goes_into_id", "is_type_of_id")
+        and _has(inputs, "input_id", "input_name", "type", "stage_id", "year")
+    ):
         rows = sequence["rows"]
         _reference(rows, "sequence.csv", "input_id", input_ids, report)
         _reference(rows, "sequence.csv", "goes_into_id", input_ids, report, optional=True)
