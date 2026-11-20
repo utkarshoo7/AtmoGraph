@@ -86,3 +86,20 @@ def test_preserves_period_product_and_relationship_metadata():
     assert edge["hs_code"] == "854231"
     assert edge["relationship"] == "REPORTED_IMPORT"
     assert edge["source"] == "UN Comtrade"
+
+
+def test_graphml_round_trip_preserves_trade_edge_data(tmp_path):
+    graph = build_trade_graph([sample_record()])
+    output_path = tmp_path / "trade_graph.graphml"
+
+    nx.write_graphml(graph, output_path)
+    restored_graph = nx.read_graphml(output_path)
+
+    assert isinstance(restored_graph, nx.MultiDiGraph)
+    assert restored_graph.has_edge("Taiwan", "India")
+    edge = restored_graph["Taiwan"]["India"]["202501_854231"]
+    assert edge["period"] == "202501"
+    assert edge["hs_code"] == "854231"
+    assert float(edge["import_value_usd"]) == pytest.approx(1200)
+    assert float(edge["quantity_tonnes"]) == pytest.approx(2.5)
+    assert edge["relationship"] == "REPORTED_IMPORT"
