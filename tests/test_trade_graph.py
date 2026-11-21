@@ -103,3 +103,26 @@ def test_graphml_round_trip_preserves_trade_edge_data(tmp_path):
     assert float(edge["import_value_usd"]) == pytest.approx(1200)
     assert float(edge["quantity_tonnes"]) == pytest.approx(2.5)
     assert edge["relationship"] == "REPORTED_IMPORT"
+
+
+def test_normalizes_dotted_hs_code():
+    graph = build_trade_graph([sample_record(hs_code="8542.31")])
+
+    assert graph.has_edge("Taiwan", "India")
+    edge = graph["Taiwan"]["India"]["202501_854231"]
+    assert edge["hs_code"] == "854231"
+
+
+def test_ignores_out_of_scope_hs_code_before_validating_other_fields():
+    record = sample_record(
+        reporter="",
+        partner="",
+        period="invalid",
+        hs_code="854290",
+        import_value_usd="not-a-number",
+    )
+
+    graph = build_trade_graph([record])
+
+    assert graph.number_of_nodes() == 0
+    assert graph.number_of_edges() == 0
